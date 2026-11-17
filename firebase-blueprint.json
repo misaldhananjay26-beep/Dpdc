@@ -1,0 +1,298 @@
+{
+  "entities": {
+    "Registration": {
+      "title": "Registration",
+      "description": "A beauty training or franchise registration submitted by a prospective partner or student.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique registration identifier (e.g. DPDC-2026-39831)",
+          "minLength": 5,
+          "maxLength": 32,
+          "pattern": "^DPDC-[0-9]{4}-[0-9]{5}$"
+        },
+        "registrationId": {
+          "type": "string",
+          "description": "Canonical registration ID matching document ID",
+          "minLength": 5,
+          "maxLength": 32,
+          "pattern": "^DPDC-[0-9]{4}-[0-9]{5}$"
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Applicant full name",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "mobile": {
+          "type": "string",
+          "description": "10-digit Indian mobile number",
+          "minLength": 10,
+          "maxLength": 15,
+          "pattern": "^[0-9]{10,15}$"
+        },
+        "phoneNumber": {
+          "type": "string",
+          "description": "Primary phone number matching mobile",
+          "minLength": 10,
+          "maxLength": 15,
+          "pattern": "^[0-9]{10,15}$"
+        },
+        "whatsapp": {
+          "type": "string",
+          "description": "WhatsApp contact number",
+          "maxLength": 15
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Optional applicant email address",
+          "maxLength": 120
+        },
+        "villageCity": {
+          "type": "string",
+          "description": "Village or city name",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "taluka": {
+          "type": "string",
+          "description": "Taluka name",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "district": {
+          "type": "string",
+          "description": "District name",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "state": {
+          "type": "string",
+          "description": "State name",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "pincode": {
+          "type": "string",
+          "description": "6-digit Indian postal PIN code",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^[1-9][0-9]{5}$"
+        },
+        "completeAddress": {
+          "type": "string",
+          "description": "Optional street or shop address",
+          "maxLength": 300
+        },
+        "courseStatus": {
+          "type": "string",
+          "enum": ["completed", "learning", "not_completed", "interested"],
+          "description": "Applicant beauty course status"
+        },
+        "qualification": {
+          "type": "string",
+          "description": "Optional educational qualification",
+          "maxLength": 100
+        },
+        "businessInterest": {
+          "type": "string",
+          "enum": ["centre", "student", "both", "exploring"],
+          "description": "Applicant interest type"
+        },
+        "premisesAvailable": {
+          "type": "string",
+          "enum": ["yes", "no", "planning"],
+          "description": "Whether commercial premises is available"
+        },
+        "premisesSize": {
+          "type": "string",
+          "description": "Optional premises area size",
+          "maxLength": 100
+        },
+        "appointmentRequested": {
+          "type": "boolean",
+          "description": "Whether consultation appointment is requested"
+        },
+        "preferredDate": {
+          "type": "string",
+          "description": "Preferred appointment date",
+          "maxLength": 30
+        },
+        "preferredTime": {
+          "type": "string",
+          "enum": ["morning", "afternoon", "evening", "flexible"],
+          "description": "Preferred appointment time slot"
+        },
+        "appointmentStatus": {
+          "type": "string",
+          "enum": ["pending", "confirmed", "completed", "cancelled"],
+          "description": "Appointment status"
+        },
+        "confirmedAppointmentDate": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "confirmedAppointmentTime": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "appointmentNotes": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "questions": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "consentContact": {
+          "type": "boolean",
+          "description": "DPDP contact consent flag"
+        },
+        "consentMarketing": {
+          "type": "boolean",
+          "description": "Marketing consent flag"
+        },
+        "leadStatus": {
+          "type": "string",
+          "enum": [
+            "New",
+            "Contacted",
+            "Interested",
+            "Appointment Requested",
+            "Appointment Confirmed",
+            "Follow-up Required",
+            "Converted",
+            "Not Interested"
+          ],
+          "description": "Current CRM lead status"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of submission"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 40
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 40
+        },
+        "googleSheetsSynced": {
+          "type": "boolean"
+        },
+        "googleSheetsSyncedAt": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "googleCalendarSynced": {
+          "type": "boolean"
+        },
+        "googleCalendarEventId": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "notes": {
+          "type": "array",
+          "description": "Internal admin follow-up notes"
+        },
+        "history": {
+          "type": "array",
+          "description": "Status change audit history"
+        }
+      },
+      "required": [
+        "id",
+        "registrationId",
+        "fullName",
+        "mobile",
+        "phoneNumber",
+        "whatsapp",
+        "villageCity",
+        "taluka",
+        "district",
+        "state",
+        "pincode",
+        "courseStatus",
+        "businessInterest",
+        "premisesAvailable",
+        "appointmentRequested",
+        "consentContact",
+        "consentMarketing",
+        "leadStatus",
+        "timestamp",
+        "createdAt",
+        "updatedAt",
+        "notes",
+        "history"
+      ]
+    },
+    "WebsiteSettings": {
+      "title": "WebsiteSettings",
+      "description": "Public helpline and branding settings managed by admins",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string", "maxLength": 120 },
+        "tagline": { "type": "string", "maxLength": 120 },
+        "phone1": { "type": "string", "maxLength": 24 },
+        "phone2": { "type": "string", "maxLength": 24 },
+        "whatsappNumber": { "type": "string", "maxLength": 24 },
+        "address": { "type": "string", "maxLength": 300 },
+        "operatingHours": { "type": "string", "maxLength": 120 },
+        "franchiseOfferNoticeMarathi": { "type": "string", "maxLength": 400 },
+        "googleSheetId": { "type": "string", "maxLength": 120 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyName", "tagline", "phone1", "whatsappNumber", "address"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Administrator action audit log entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 80 },
+        "timestamp": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "user": { "type": "string", "maxLength": 120 },
+        "action": { "type": "string", "maxLength": 120 },
+        "details": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "timestamp", "user", "action", "details"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized administrator registry document",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/registrations/{registrationId}": {
+      "schema": { "$ref": "#/entities/Registration" },
+      "description": "Publicly creatable, admin-only readable/mutable registrations"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/WebsiteSettings" },
+      "description": "Publicly readable website settings, writable only by admins"
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Admin-only audit log entries"
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Authorized administrator UIDs"
+    }
+  }
+}

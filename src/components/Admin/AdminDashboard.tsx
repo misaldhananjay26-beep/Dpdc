@@ -29,24 +29,34 @@ import {
   FileText,
   UserCheck,
 } from 'lucide-react';
+import { User } from 'firebase/auth';
 import {
   Registration,
   LeadStatus,
   AuditLog,
   WebsiteSettings,
 } from '../../types';
-import { StorageService } from '../../services/storage';
+import {
+  FirestoreService,
+  DEFAULT_WEBSITE_SETTINGS,
+  AdminUserRecord,
+} from '../../services/firestoreService';
+import { filterRegistrations } from '../../services/registrationPayload';
 import {
   exportToCsv,
   buildWhatsAppLink,
-  formatIndianPhone,
 } from '../../utils/validation';
 import { GoogleWorkspaceService } from '../../services/googleWorkspace';
-import { googleSignIn, getAccessToken, logoutGoogle } from '../../services/firebaseAuth';
+import {
+  googleSignIn,
+  getAccessToken,
+  resendAdminVerificationEmail,
+} from '../../services/firebaseAuth';
 import { MAHARASHTRA_DISTRICTS } from '../../data/maharashtra';
 import logoImg from '../../assets/logo.png';
 
 interface AdminDashboardProps {
+  adminUser: User;
   adminEmail: string;
   adminToken?: string;
   onLogout: () => void;
@@ -54,6 +64,7 @@ interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  adminUser,
   adminEmail,
   adminToken,
   onLogout,
@@ -62,17 +73,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Active Navigation Tab: 'leads' | 'appointments' | 'sheets' | 'analytics' | 'settings'
   const [activeTab, setActiveTab] = useState<'leads' | 'appointments' | 'sheets' | 'analytics' | 'settings'>('leads');
 
-  // Registrations state
+  // Registrations state (Live Firestore real-time sync)
   const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [isLoadingLeads, setIsLoadingLeads] = useState<boolean>(true);
+  const [firestoreError, setFirestoreError] = useState<string | null>(null);
+  const [verificationSent, setVerificationSent] = useState<boolean>(false);
   const [selectedApplicant, setSelectedApplicant] = useState<Registration | null>(null);
-  const [editingApplicant, setEditingApplicant] = useState<Registration | null>(null);
 
   // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDistrict, setFilterDistrict] = useState('ALL');
   const [filterLeadStatus, setFilterLeadStatus] = useState('ALL');
-  const [filterInterest, setFilterInterest] = useState('ALL');
-  const [filterCourseStatus, setFilterCourseStatus] = useState('ALL');
 
   // Google Integration states
   const [googleToken, setGoogleToken] = useState<string | null>(adminToken || null);
@@ -89,22 +100,54 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Follow-up note input in modal
   const [newNoteText, setNewNoteText] = useState('');
 
-  // Audit Logs & Settings
+  // Audit Logs, Settings & Authorized Admins
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [settings, setSettings] = useState<WebsiteSettings>(StorageService.getSettings());
+  const [settings, setSettings] = useState<WebsiteSettings>(DEFAULT_WEBSITE_SETTINGS);
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [authorizedAdmins, setAuthorizedAdmins] = useState<AdminUserRecord[]>([]);
+  const [newAdminUid, setNewAdminUid] = useState('');
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [adminActionMsg, setAdminActionMsg] = useState<string | null>(null);
 
-  // Load data on mount
+  // Subscribe to real-time Firestore collections when authenticated admin mounts
   useEffect(() => {
-    loadData();
-  }, []);
+    setIsLoadingLeads(true);
+    setFirestoreError(null);
 
-  const loadData = () => {
-    const list = StorageService.getRegistrations();
-    setRegistrations(list);
-    setAuditLogs(StorageService.getAuditLogs());
-    setSettings(StorageService.getSettings());
-  };
+    const unsubRegs = FirestoreService.subscribeToRegistrations(
+      (list) => {
+        setRegistrations(list);
+        setIsLoadingLeads(false);
+        setFirestoreError(null);
+        setSelectedApplicant((prev) =>
+          prev ? list.find((item) => item.id === prev.id) || null : null
+        );
+      },
+      (err) => {
+        setIsLoadingLeads(false);
+        setFirestoreError(err.message);
+      }
+    );
+
+    const unsubLogs = FirestoreService.subscribeToAuditLogs((logs) => {
+      setAuditLogs(logs);
+    });
+
+    const unsubSettings = FirestoreService.subscribeToSettings((liveSettings) => {
+      setSettings(liveSettings);
+    });
+
+    const unsubAdmins = FirestoreService.subscribeToAdmins((list) => {
+      setAuthorizedAdmins(list);
+    });
+
+    return () => {
+      unsubRegs();
+      unsubLogs();
+      unsubSettings();
+      unsubAdmins();
+    };
+  }, [adminUser.uid]);
 
   // Google OAuth connect if token is missing
   const ensureGoogleToken = async (): Promise<string | null> => {
@@ -122,31 +165,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Status Change Handler
-  const handleStatusChange = (id: string, newStatus: LeadStatus) => {
-    StorageService.updateRegistration(id, { leadStatus: newStatus }, adminEmail);
-    loadData();
-    if (selectedApplicant && selectedApplicant.id === id) {
-      setSelectedApplicant((prev) => (prev ? { ...prev, leadStatus: newStatus } : null));
-    }
+  const handleStatusChange = async (id: string, newStatus: LeadStatus) => {
+    const currentReg = registrations.find((r) => r.id === id);
+    await FirestoreService.updateRegistration(
+      id,
+      { leadStatus: newStatus },
+      currentReg,
+      adminEmail
+    );
   };
 
   // Add Note Handler
-  const handleAddNote = (id: string) => {
+  const handleAddNote = async (id: string) => {
     if (!newNoteText.trim()) return;
-    StorageService.addRegistrationNote(id, newNoteText.trim(), adminEmail);
+    const currentReg = registrations.find((r) => r.id === id);
+    await FirestoreService.addRegistrationNote(
+      id,
+      newNoteText.trim(),
+      adminEmail,
+      currentReg?.notes || []
+    );
     setNewNoteText('');
-    loadData();
-    // Update active modal view
-    const updated = StorageService.getRegistrations().find((r) => r.id === id);
-    if (updated) setSelectedApplicant(updated);
   };
 
   // Delete Lead
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`खरोखरच ${name} (ID: ${id}) चा अर्ज हटवायचा आहे का?`)) {
-      StorageService.deleteRegistration(id, adminEmail);
+      await FirestoreService.deleteRegistration(id, adminEmail);
       if (selectedApplicant?.id === id) setSelectedApplicant(null);
-      loadData();
     }
   };
 
@@ -171,17 +217,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
 
       if (res.success && res.spreadsheetId) {
-        // Save spreadsheet ID to settings
-        StorageService.updateSettings({ googleSheetId: res.spreadsheetId }, adminEmail);
-        setSettings((prev) => ({ ...prev, googleSheetId: res.spreadsheetId }));
-        // Mark all as synced
-        registrations.forEach((r) => {
-          StorageService.updateRegistration(r.id, {
-            googleSheetsSynced: true,
-            googleSheetsSyncedAt: new Date().toISOString(),
-          });
-        });
-        loadData();
+        await FirestoreService.updateSettings(
+          { ...settings, googleSheetId: res.spreadsheetId },
+          adminEmail
+        );
+        await Promise.all(
+          registrations.map((r) =>
+            FirestoreService.updateRegistration(
+              r.id,
+              {
+                googleSheetsSynced: true,
+                googleSheetsSyncedAt: new Date().toISOString(),
+              },
+              r,
+              adminEmail
+            )
+          )
+        );
         setSheetSyncMessage({
           success: true,
           text: res.message,
@@ -208,8 +260,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     setIsSyncingCalendar(schedulingReg.id);
     try {
-      // 1. Update in local database
-      StorageService.updateRegistration(
+      await FirestoreService.updateRegistration(
         schedulingReg.id,
         {
           leadStatus: 'Appointment Confirmed',
@@ -218,10 +269,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           confirmedAppointmentTime: scheduledTime,
           appointmentNotes: scheduleNotes,
         },
+        schedulingReg,
         adminEmail
       );
 
-      // 2. Sync with Google Calendar if connected
       const token = await getAccessToken();
       if (token) {
         const calRes = await GoogleWorkspaceService.createCalendarAppointment(
@@ -231,11 +282,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           token
         );
         if (calRes.success) {
-          StorageService.updateRegistration(schedulingReg.id, {
-            googleCalendarSynced: true,
-            googleCalendarEventId: calRes.eventId,
-          });
-          StorageService.addAuditLog(
+          await FirestoreService.updateRegistration(
+            schedulingReg.id,
+            {
+              googleCalendarSynced: true,
+              googleCalendarEventId: calRes.eventId,
+            },
+            schedulingReg,
+            adminEmail
+          );
+          await FirestoreService.addAuditLog(
             adminEmail,
             'Google Calendar Event Created',
             `Scheduled for ${schedulingReg.fullName} on ${scheduledDate} at ${scheduledTime}`
@@ -244,7 +300,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
 
       setSchedulingReg(null);
-      loadData();
     } catch (err) {
       console.error(err);
     } finally {
@@ -252,13 +307,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Export Filtered Leads to CSV
-  const handleExportCsv = () => {
-    const exportData = filteredRegistrations.map((r) => ({
-      'Registration ID': r.id,
+  // Export Leads (filtered or complete) to Excel-friendly UTF-8 BOM CSV
+  const handleExportCsv = (exportAll: boolean = false) => {
+    const sourceList = exportAll ? registrations : filteredRegistrations;
+    const exportData = sourceList.map((r) => ({
+      'Registration ID': r.registrationId || r.id,
       'Full Name': r.fullName,
-      'Mobile': r.mobile,
+      'Phone Number': r.phoneNumber || r.mobile,
       'WhatsApp': r.whatsapp,
+      'Email': r.email || '',
       'Village / City': r.villageCity,
       'Taluka': r.taluka,
       'District': r.district,
@@ -279,44 +336,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       'Registered At': new Date(r.createdAt).toLocaleString('en-IN'),
     }));
 
-    exportToCsv(exportData, `DPDC_SKILL_Leads_${new Date().toISOString().slice(0, 10)}`);
-    StorageService.addAuditLog(adminEmail, 'Leads Exported to CSV', `Exported ${exportData.length} records`);
+    exportToCsv(
+      exportData,
+      `DPDC_SKILL_Registrations_${new Date().toISOString().slice(0, 10)}`
+    );
+    FirestoreService.addAuditLog(
+      adminEmail,
+      'Leads Exported to CSV',
+      `Exported ${exportData.length} records`
+    );
   };
 
-  // Save Settings
-  const handleSaveSettings = (e: React.FormEvent) => {
+  // Save Settings to Firestore
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    StorageService.updateSettings(settings, adminEmail);
+    await FirestoreService.updateSettings(settings, adminEmail);
     setSettingsSaved(true);
     setTimeout(() => setSettingsSaved(false), 2500);
-    loadData();
   };
 
-  // Filter Logic
-  const filteredRegistrations = registrations.filter((r) => {
-    // Search
-    const searchLower = searchTerm.toLowerCase();
-    const matchesSearch =
-      !searchTerm ||
-      r.fullName.toLowerCase().includes(searchLower) ||
-      r.mobile.includes(searchLower) ||
-      r.villageCity.toLowerCase().includes(searchLower) ||
-      r.taluka.toLowerCase().includes(searchLower) ||
-      r.id.toLowerCase().includes(searchLower);
+  const handleSendVerificationEmail = async () => {
+    try {
+      await resendAdminVerificationEmail();
+      setVerificationSent(true);
+    } catch (e) {
+      console.error('Failed to send verification email:', e);
+    }
+  };
 
-    // District
-    const matchesDistrict = filterDistrict === 'ALL' || r.district === filterDistrict;
+  const handleAddAuthorizedAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminUid.trim() || !newAdminEmail.trim()) return;
+    await FirestoreService.addAuthorizedAdmin(newAdminUid.trim(), newAdminEmail.trim(), adminEmail);
+    setNewAdminUid('');
+    setNewAdminEmail('');
+    setAdminActionMsg('नवीन प्रशासक यशस्वीपणे जोडला गेला!');
+    setTimeout(() => setAdminActionMsg(null), 3000);
+  };
 
-    // Status
-    const matchesStatus = filterLeadStatus === 'ALL' || r.leadStatus === filterLeadStatus;
-
-    // Interest
-    const matchesInterest = filterInterest === 'ALL' || r.businessInterest === filterInterest;
-
-    // Course
-    const matchesCourse = filterCourseStatus === 'ALL' || r.courseStatus === filterCourseStatus;
-
-    return matchesSearch && matchesDistrict && matchesStatus && matchesInterest && matchesCourse;
+  // Filter Logic (pure helper)
+  const filteredRegistrations = filterRegistrations(registrations, {
+    searchTerm,
+    district: filterDistrict,
+    leadStatus: filterLeadStatus,
   });
 
   // KPI Calculations
@@ -493,6 +555,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
 
+        {/* Firestore Permission / Sync Error Banner */}
+        {firestoreError && (
+          <div role="alert" className="mb-6 p-5 rounded-2xl bg-red-950/60 border border-red-500/40 text-red-100 space-y-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <div className="space-y-1 text-xs sm:text-sm">
+                <p className="font-bold text-white">
+                  Firestore डेटा प्रवेश नाकारला (Admin Authorization Required)
+                </p>
+                <p className="text-red-200 leading-relaxed">
+                  तुमचे Firebase खाते (<span className="font-mono font-bold">{adminEmail}</span>, UID:{' '}
+                  <span className="font-mono select-all bg-black/40 px-1.5 py-0.5 rounded">{adminUser.uid}</span>) अद्याप अधिकृत प्रशासक म्हणून सत्यापित नाही.
+                </p>
+                {!adminUser.emailVerified && (
+                  <div className="pt-2 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleSendVerificationEmail}
+                      className="px-4 py-2 rounded-xl bg-[#D4AF37] hover:bg-[#F5DE9E] text-black font-bold text-xs cursor-pointer"
+                    >
+                      ईमेल पडताळणी लिंक पाठवा (Send Verification Email)
+                    </button>
+                    {verificationSent && (
+                      <span className="text-emerald-300 text-xs font-semibold">
+                        पडताळणी लिंक ईमेलवर पाठवली आहे! लिंकवर क्लिक केल्यानंतर पृष्ठ रिफ्रेश करा.
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* TAB 1: LEADS & REGISTRATIONS */}
         {activeTab === 'leads' && (
           <div className="space-y-4">
@@ -503,15 +599,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <Search className="absolute left-3.5 top-3 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
+                  aria-label="Search registrations by name, ID, phone, or city"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="नाव, फोन नंबर, गाव, तालुका किंवा आयडी द्वारे शोधा..."
+                  placeholder="नाव, नोंदणी आयडी (DPDC-2026-...), फोन नंबर किंवा गाव द्वारे शोधा..."
                   className="w-full pl-10 pr-4 py-2 rounded-xl bg-[#18181C] border border-neutral-700 text-xs sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
                 />
               </div>
 
               {/* District Filter */}
               <select
+                aria-label="Filter by District"
                 value={filterDistrict}
                 onChange={(e) => setFilterDistrict(e.target.value)}
                 className="px-3 py-2 rounded-xl bg-[#18181C] border border-neutral-700 text-xs text-white focus:outline-none focus:border-[#D4AF37]"
@@ -526,6 +624,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               {/* Status Filter */}
               <select
+                aria-label="Filter by Lead Status"
                 value={filterLeadStatus}
                 onChange={(e) => setFilterLeadStatus(e.target.value)}
                 className="px-3 py-2 rounded-xl bg-[#18181C] border border-neutral-700 text-xs text-white focus:outline-none focus:border-[#D4AF37]"
@@ -541,14 +640,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <option value="Not Interested">अनुत्सुक</option>
               </select>
 
-              {/* Export Button */}
-              <button
-                onClick={handleExportCsv}
-                className="px-4 py-2 rounded-xl bg-[#18181C] hover:bg-[#222228] border border-[#D4AF37]/30 text-[#F5DE9E] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>CSV / Excel डाउनलोड</span>
-              </button>
+              {/* Export Buttons */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleExportCsv(false)}
+                  disabled={filteredRegistrations.length === 0}
+                  className="px-4 py-2 rounded-xl bg-[#18181C] hover:bg-[#222228] border border-[#D4AF37]/30 text-[#F5DE9E] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-40"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>CSV / Excel ({filteredRegistrations.length})</span>
+                </button>
+                {filteredRegistrations.length !== registrations.length && (
+                  <button
+                    type="button"
+                    onClick={() => handleExportCsv(true)}
+                    className="px-3 py-2 rounded-xl bg-[#18181C] hover:bg-[#222228] border border-neutral-700 text-gray-200 font-semibold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>सर्व ({registrations.length})</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Registrations Table */}
@@ -567,7 +680,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-850">
-                    {filteredRegistrations.length === 0 ? (
+                    {isLoadingLeads ? (
+                      <tr>
+                        <td colSpan={7} className="text-center py-12 text-[#F5DE9E]">
+                          Firebase क्लाउड डेटाबेसमधून नोंदणी लोड होत आहेत...
+                        </td>
+                      </tr>
+                    ) : filteredRegistrations.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="text-center py-12 text-gray-500">
                           कोणतीही नोंदणी आढळली नाही.
@@ -1067,11 +1186,73 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <button
                   type="submit"
-                  className="gold-gradient-btn px-5 py-2.5 rounded-xl font-bold text-xs"
+                  className="gold-gradient-btn px-5 py-2.5 rounded-xl font-bold text-xs cursor-pointer"
                 >
                   सेटिंग्ज जतन करा
                 </button>
               </form>
+
+              {/* Authorized Admins Registry */}
+              <div className="pt-4 mt-4 border-t border-neutral-800 space-y-3 text-xs">
+                <h5 className="font-bold text-[#F5DE9E] flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-[#D4AF37]" />
+                  <span>अधिकृत प्रशासक व्यवस्थापन (Authorized Admins)</span>
+                </h5>
+                <p className="text-[11px] text-gray-400">
+                  तुमचा स्वतःचा Firebase UID: <span className="font-mono text-gray-200 select-all">{adminUser.uid}</span>
+                </p>
+
+                {adminActionMsg && (
+                  <p className="text-emerald-400 font-semibold">{adminActionMsg}</p>
+                )}
+
+                <form onSubmit={handleAddAuthorizedAdmin} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Firebase User UID"
+                    value={newAdminUid}
+                    onChange={(e) => setNewAdminUid(e.target.value)}
+                    className="px-3 py-2 rounded-xl bg-[#151518] border border-neutral-700 text-white"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Admin Email"
+                    value={newAdminEmail}
+                    onChange={(e) => setNewAdminEmail(e.target.value)}
+                    className="px-3 py-2 rounded-xl bg-[#151518] border border-neutral-700 text-white"
+                  />
+                  <button
+                    type="submit"
+                    className="px-3 py-2 rounded-xl bg-[#18181C] hover:bg-[#222228] border border-[#D4AF37]/40 text-[#F5DE9E] font-bold cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>जोडा</span>
+                  </button>
+                </form>
+
+                {authorizedAdmins.length > 0 && (
+                  <div className="space-y-1.5">
+                    {authorizedAdmins.map((a) => (
+                      <div key={a.uid} className="flex items-center justify-between p-2 rounded-lg bg-[#141417] border border-neutral-800">
+                        <div>
+                          <span className="font-semibold text-white">{a.email}</span>
+                          <span className="block text-[10px] font-mono text-gray-400">{a.uid}</span>
+                        </div>
+                        {a.uid !== adminUser.uid && (
+                          <button
+                            type="button"
+                            onClick={() => FirestoreService.removeAuthorizedAdmin(a.uid, adminEmail)}
+                            className="text-red-400 hover:text-red-300 p-1 cursor-pointer"
+                            title="प्रशासक काढून टाका"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Audit Logs */}

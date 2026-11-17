@@ -36,8 +36,10 @@ export interface StatusHistoryItem {
 
 export interface Registration {
   id: string; // e.g., DPDC-2026-78421
+  registrationId: string; // Matches id & Firestore document ID
   fullName: string;
   mobile: string;
+  phoneNumber: string; // Canonical phone field matching mobile
   whatsapp: string;
   email?: string;
   villageCity: string;
@@ -62,6 +64,7 @@ export interface Registration {
   consentContact: boolean;
   consentMarketing: boolean;
   leadStatus: LeadStatus;
+  timestamp?: unknown; // Firestore serverTimestamp
   createdAt: string;
   updatedAt: string;
   googleSheetsSynced?: boolean;

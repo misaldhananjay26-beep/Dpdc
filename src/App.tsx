@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Language } from './types';
+import { User } from 'firebase/auth';
+import { Language, WebsiteSettings } from './types';
 import { Navbar } from './components/Navbar';
 import { BannerImageSpace } from './components/BannerImageSpace';
 import { RegistrationForm } from './components/RegistrationForm';
@@ -8,8 +9,11 @@ import { AdminLogin } from './components/Admin/AdminLogin';
 import { AdminDashboard } from './components/Admin/AdminDashboard';
 import { PrivacyPolicyModal } from './components/Modals/PrivacyPolicyModal';
 import { TermsConditionsModal } from './components/Modals/TermsConditionsModal';
-import { StorageService } from './services/storage';
-import { initAuth } from './services/firebaseAuth';
+import {
+  FirestoreService,
+  DEFAULT_WEBSITE_SETTINGS,
+} from './services/firestoreService';
+import { subscribeToAuthChanges, logoutAdmin } from './services/firebaseAuth';
 import { MessageSquare, Phone } from 'lucide-react';
 import { buildWhatsAppLink } from './utils/validation';
 
@@ -21,59 +25,68 @@ export default function App() {
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
 
-  // Admin Session
-  const [adminEmail, setAdminEmail] = useState<string>('dhananjay@dpdc.admin');
+  // Firebase Auth Session (Source of Truth for Admin Access)
+  const [authReady, setAuthReady] = useState(false);
+  const [authUser, setAuthUser] = useState<User | null>(null);
   const [adminToken, setAdminToken] = useState<string | undefined>(undefined);
 
-  // Check URL query parameters and existing admin session on load
+  // Public Website Settings synced from Firestore
+  const [settings, setSettings] = useState<WebsiteSettings>(DEFAULT_WEBSITE_SETTINGS);
+
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const existingSession = StorageService.getAdminSession();
     const isAdminRequested =
       urlParams.get('admin') === '1' ||
       urlParams.get('admin') === 'dpdc' ||
       urlParams.get('portal') === 'admin' ||
       window.location.pathname.startsWith('/admin');
 
-    if (existingSession?.loggedIn) {
-      setAdminEmail(existingSession.email);
-      setAdminToken(existingSession.token);
-      if (isAdminRequested) {
-        setView('admin_dashboard');
-      }
-    } else if (isAdminRequested) {
-      setView('admin_login');
-    }
+    const unsubAuth = subscribeToAuthChanges((user, token) => {
+      setAuthUser(user);
+      setAdminToken(token || undefined);
+      setAuthReady(true);
 
-    initAuth(
-      (user, token) => {
-        setAdminToken(token);
-        if (user.email) {
-          setAdminEmail(user.email);
+      if (user) {
+        if (isAdminRequested) {
+          setView('admin_dashboard');
         }
-      },
-      () => {
-        // Unauthenticated
+      } else if (isAdminRequested) {
+        setView('admin_login');
       }
-    );
+    });
+
+    const unsubSettings = FirestoreService.subscribeToSettings((liveSettings) => {
+      setSettings(liveSettings);
+    });
 
     // Secure owner keyboard shortcut: Ctrl+Shift+A or Cmd+Shift+A
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
         e.preventDefault();
-        handleOpenAdmin();
+        setView((prev) => {
+          if (prev === 'admin_dashboard') return 'admin_dashboard';
+          return 'admin_login';
+        });
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      unsubAuth();
+      unsubSettings();
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
+  // Automatically elevate to dashboard when Ctrl+Shift+A opens admin_login while already signed in
+  useEffect(() => {
+    if (authReady && authUser && view === 'admin_login') {
+      setView('admin_dashboard');
+    }
+  }, [authReady, authUser, view]);
+
   const handleOpenAdmin = () => {
-    const session = StorageService.getAdminSession();
-    if (session?.loggedIn) {
-      setAdminEmail(session.email);
-      setAdminToken(session.token);
+    if (authUser) {
       setView('admin_dashboard');
     } else {
       setView('admin_login');
@@ -81,29 +94,29 @@ export default function App() {
   };
 
   const handleAdminLoginSuccess = (session: { email: string; token?: string }) => {
-    setAdminEmail(session.email);
-    setAdminToken(session.token);
+    if (session.token) {
+      setAdminToken(session.token);
+    }
     setView('admin_dashboard');
   };
 
-  const handleAdminLogout = () => {
-    StorageService.clearAdminSession();
+  const handleAdminLogout = async () => {
+    await logoutAdmin();
     setAdminToken(undefined);
     setView('website');
   };
 
-  const settings = StorageService.getSettings();
-
   return (
     <div className="min-h-screen bg-[#080808] text-[#FDFBF7] flex flex-col font-sans selection:bg-[#D4AF37]/30 selection:text-[#F5DE9E]">
-      {view === 'admin_dashboard' ? (
+      {view === 'admin_dashboard' && authUser ? (
         <AdminDashboard
-          adminEmail={adminEmail}
+          adminUser={authUser}
+          adminEmail={authUser.email || 'admin@dpdcskill.com'}
           adminToken={adminToken}
           onLogout={handleAdminLogout}
           onViewWebsite={() => setView('website')}
         />
-      ) : view === 'admin_login' ? (
+      ) : view === 'admin_login' || (view === 'admin_dashboard' && authReady && !authUser) ? (
         <AdminLogin
           onSuccess={handleAdminLoginSuccess}
           onBackToHome={() => setView('website')}

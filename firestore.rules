@@ -1,0 +1,284 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net - Default Deny All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Primitives
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidRegId(id) {
+      return id is string && id.size() <= 32 && id.matches('^DPDC-[0-9]{4}-[0-9]{5}$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedAdminEmail() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && (
+          request.auth.token.email == 'misaldhananjay26@gmail.com'
+          || request.auth.token.email.matches('.*@dpdcskill\\.com$')
+        );
+    }
+
+    function isRegisteredAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return isVerifiedAdminEmail() || isRegisteredAdmin();
+    }
+
+    function isValidLeadStatus(status) {
+      return status in [
+        'New',
+        'Contacted',
+        'Interested',
+        'Appointment Requested',
+        'Appointment Confirmed',
+        'Follow-up Required',
+        'Converted',
+        'Not Interested'
+      ];
+    }
+
+    function isValidRegistrationSchema(data, regId) {
+      return data.keys().hasAll([
+        'id',
+        'registrationId',
+        'fullName',
+        'mobile',
+        'phoneNumber',
+        'whatsapp',
+        'villageCity',
+        'taluka',
+        'district',
+        'state',
+        'pincode',
+        'courseStatus',
+        'businessInterest',
+        'premisesAvailable',
+        'appointmentRequested',
+        'consentContact',
+        'consentMarketing',
+        'leadStatus',
+        'timestamp',
+        'createdAt',
+        'updatedAt',
+        'notes',
+        'history'
+      ])
+      && data.keys().hasOnly([
+        'id',
+        'registrationId',
+        'fullName',
+        'mobile',
+        'phoneNumber',
+        'whatsapp',
+        'email',
+        'villageCity',
+        'taluka',
+        'district',
+        'state',
+        'pincode',
+        'completeAddress',
+        'courseStatus',
+        'qualification',
+        'businessInterest',
+        'premisesAvailable',
+        'premisesSize',
+        'appointmentRequested',
+        'preferredDate',
+        'preferredTime',
+        'appointmentStatus',
+        'confirmedAppointmentDate',
+        'confirmedAppointmentTime',
+        'appointmentNotes',
+        'questions',
+        'consentContact',
+        'consentMarketing',
+        'leadStatus',
+        'timestamp',
+        'createdAt',
+        'updatedAt',
+        'googleSheetsSynced',
+        'googleSheetsSyncedAt',
+        'googleCalendarSynced',
+        'googleCalendarEventId',
+        'notes',
+        'history'
+      ])
+      && data.id is string && data.id == regId && isValidRegId(data.id)
+      && data.registrationId is string && data.registrationId == regId && isValidRegId(data.registrationId)
+      && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 120
+      && data.mobile is string && data.mobile.size() >= 10 && data.mobile.size() <= 15 && data.mobile.matches('^[0-9]{10,15}$')
+      && data.phoneNumber is string && data.phoneNumber.size() >= 10 && data.phoneNumber.size() <= 15 && data.phoneNumber.matches('^[0-9]{10,15}$')
+      && data.whatsapp is string && data.whatsapp.size() <= 15
+      && (!('email' in data) || (data.email is string && data.email.size() <= 120))
+      && data.villageCity is string && data.villageCity.size() >= 1 && data.villageCity.size() <= 120
+      && data.taluka is string && data.taluka.size() >= 1 && data.taluka.size() <= 100
+      && data.district is string && data.district.size() >= 1 && data.district.size() <= 100
+      && data.state is string && data.state.size() >= 1 && data.state.size() <= 60
+      && data.pincode is string && data.pincode.size() == 6 && data.pincode.matches('^[1-9][0-9]{5}$')
+      && (!('completeAddress' in data) || (data.completeAddress is string && data.completeAddress.size() <= 300))
+      && data.courseStatus in ['completed', 'learning', 'not_completed', 'interested']
+      && (!('qualification' in data) || (data.qualification is string && data.qualification.size() <= 100))
+      && data.businessInterest in ['centre', 'student', 'both', 'exploring']
+      && data.premisesAvailable in ['yes', 'no', 'planning']
+      && (!('premisesSize' in data) || (data.premisesSize is string && data.premisesSize.size() <= 100))
+      && data.appointmentRequested is bool
+      && (!('preferredDate' in data) || (data.preferredDate is string && data.preferredDate.size() <= 30))
+      && (!('preferredTime' in data) || data.preferredTime in ['morning', 'afternoon', 'evening', 'flexible'])
+      && (!('appointmentStatus' in data) || data.appointmentStatus in ['pending', 'confirmed', 'completed', 'cancelled'])
+      && (!('confirmedAppointmentDate' in data) || (data.confirmedAppointmentDate is string && data.confirmedAppointmentDate.size() <= 30))
+      && (!('confirmedAppointmentTime' in data) || (data.confirmedAppointmentTime is string && data.confirmedAppointmentTime.size() <= 30))
+      && (!('appointmentNotes' in data) || (data.appointmentNotes is string && data.appointmentNotes.size() <= 500))
+      && (!('questions' in data) || (data.questions is string && data.questions.size() <= 1000))
+      && data.consentContact is bool
+      && data.consentMarketing is bool
+      && data.leadStatus is string && isValidLeadStatus(data.leadStatus)
+      && data.timestamp is timestamp
+      && data.createdAt is string && data.createdAt.size() <= 40
+      && data.updatedAt is string && data.updatedAt.size() <= 40
+      && (!('googleSheetsSynced' in data) || data.googleSheetsSynced is bool)
+      && (!('googleSheetsSyncedAt' in data) || (data.googleSheetsSyncedAt is string && data.googleSheetsSyncedAt.size() <= 40))
+      && (!('googleCalendarSynced' in data) || data.googleCalendarSynced is bool)
+      && (!('googleCalendarEventId' in data) || (data.googleCalendarEventId is string && data.googleCalendarEventId.size() <= 120))
+      && data.notes is list && data.notes.size() <= 100
+      && (data.notes.size() == 0 || data.notes[0] is map)
+      && data.history is list && data.history.size() <= 100
+      && (data.history.size() == 0 || data.history[0] is map);
+    }
+
+    function isValidSettingsSchema(data) {
+      return data.keys().hasAll(['companyName', 'tagline', 'phone1', 'whatsappNumber', 'address'])
+        && data.keys().hasOnly([
+          'companyName',
+          'tagline',
+          'phone1',
+          'phone2',
+          'whatsappNumber',
+          'address',
+          'operatingHours',
+          'franchiseOfferNoticeMarathi',
+          'googleSheetId',
+          'updatedAt'
+        ])
+        && data.companyName is string && data.companyName.size() >= 1 && data.companyName.size() <= 120
+        && data.tagline is string && data.tagline.size() >= 1 && data.tagline.size() <= 120
+        && data.phone1 is string && data.phone1.size() >= 5 && data.phone1.size() <= 24
+        && (!('phone2' in data) || (data.phone2 is string && data.phone2.size() <= 24))
+        && data.whatsappNumber is string && data.whatsappNumber.size() >= 5 && data.whatsappNumber.size() <= 24
+        && data.address is string && data.address.size() >= 1 && data.address.size() <= 300
+        && (!('operatingHours' in data) || (data.operatingHours is string && data.operatingHours.size() <= 120))
+        && (!('franchiseOfferNoticeMarathi' in data) || (data.franchiseOfferNoticeMarathi is string && data.franchiseOfferNoticeMarathi.size() <= 400))
+        && (!('googleSheetId' in data) || (data.googleSheetId is string && data.googleSheetId.size() <= 120))
+        && (!('updatedAt' in data) || data.updatedAt is string && data.updatedAt.size() <= 40);
+    }
+
+    // 1. Registrations Collection
+    // Public visitors can create valid new registrations; only authenticated admins can read, update, or delete.
+    match /registrations/{registrationId} {
+      allow get: if isValidRegId(registrationId) && isAdmin();
+      allow list: if isAdmin();
+
+      allow create: if isValidRegId(registrationId)
+        && isValidRegistrationSchema(incoming(), registrationId)
+        && incoming().leadStatus == 'New'
+        && incoming().consentContact == true
+        && incoming().timestamp == request.time
+        && incoming().notes.size() == 0
+        && incoming().history.size() <= 1;
+
+      allow update: if isValidRegId(registrationId)
+        && isAdmin()
+        && isValidRegistrationSchema(incoming(), registrationId)
+        && incoming().id == existing().id
+        && incoming().registrationId == existing().registrationId
+        && incoming().timestamp == existing().timestamp
+        && incoming().createdAt == existing().createdAt
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'leadStatus',
+            'updatedAt',
+            'notes',
+            'history',
+            'appointmentStatus',
+            'confirmedAppointmentDate',
+            'confirmedAppointmentTime',
+            'appointmentNotes',
+            'googleSheetsSynced',
+            'googleSheetsSyncedAt',
+            'googleCalendarSynced',
+            'googleCalendarEventId'
+          ])
+        );
+
+      allow delete: if isValidRegId(registrationId) && isAdmin();
+    }
+
+    // 2. Website Settings Collection
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId) && (settingId == 'public' || isAdmin());
+      allow list: if isAdmin();
+      allow create, update: if isValidId(settingId)
+        && isAdmin()
+        && isValidSettingsSchema(incoming());
+      allow delete: if false;
+    }
+
+    // 3. Audit Logs Collection (Admin Only)
+    match /auditLogs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(logId)
+        && isAdmin()
+        && incoming().keys().hasAll(['id', 'timestamp', 'user', 'action', 'details'])
+        && incoming().keys().hasOnly(['id', 'timestamp', 'createdAt', 'user', 'action', 'details'])
+        && incoming().id is string && incoming().id.size() <= 80
+        && incoming().timestamp is string && incoming().timestamp.size() <= 40
+        && (!('createdAt' in incoming()) || incoming().createdAt is timestamp)
+        && incoming().user is string && incoming().user.size() <= 120
+        && incoming().action is string && incoming().action.size() <= 120
+        && incoming().details is string && incoming().details.size() <= 500;
+      allow update, delete: if false;
+    }
+
+    // 4. Admins Registry Collection (Admin Only - No Self-Escalation)
+    match /admins/{uid} {
+      allow get: if isValidId(uid) && isAdmin();
+      allow list: if isAdmin();
+      allow create, update: if isValidId(uid)
+        && isAdmin()
+        && incoming().keys().hasAll(['uid', 'email', 'role'])
+        && incoming().keys().hasOnly(['uid', 'email', 'role', 'createdAt'])
+        && incoming().uid is string && incoming().uid == uid && incoming().uid.size() <= 128
+        && incoming().email is string && incoming().email.size() <= 120
+        && incoming().role == 'admin'
+        && (!('createdAt' in incoming()) || (incoming().createdAt is string && incoming().createdAt.size() <= 40));
+      allow delete: if isValidId(uid) && isAdmin() && uid != request.auth.uid;
+    }
+
+    // 5. Connection Health Check Document
+    match /test/connection {
+      allow get: if request.time != null;
+      allow list, write: if false;
+    }
+  }
+}

@@ -44,6 +44,11 @@ export function buildWhatsAppLink(phone: string, text: string): string {
   return `https://wa.me/${international}?text=${encodeURIComponent(text)}`;
 }
 
+export function sanitizeText(value: string | undefined, maxLength: number): string {
+  if (!value) return '';
+  return value.trim().slice(0, maxLength);
+}
+
 export function exportToCsv(data: Array<Record<string, unknown>>, filename: string): void {
   if (!data || data.length === 0) return;
 
@@ -61,7 +66,8 @@ export function exportToCsv(data: Array<Record<string, unknown>>, filename: stri
     )
   ];
 
-  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  // Prepend UTF-8 BOM (\uFEFF) so Microsoft Excel renders Marathi/Devanagari characters cleanly
+  const blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.setAttribute('href', url);

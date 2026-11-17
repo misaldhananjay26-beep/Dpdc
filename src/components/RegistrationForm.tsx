@@ -27,7 +27,7 @@ import {
   generateRegistrationId,
   buildWhatsAppLink,
 } from '../utils/validation';
-import { StorageService } from '../services/storage';
+import { FirestoreService } from '../services/firestoreService';
 import { SuccessAnimation } from './SuccessAnimation';
 
 interface RegistrationFormProps {
@@ -43,6 +43,7 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
   const t = TRANSLATIONS[language];
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [submittedRegistration, setSubmittedRegistration] = useState<Registration | null>(null);
 
   // Clean, focused form state without email or extraneous text boxes
@@ -108,20 +109,24 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError(null);
     if (!validate()) return;
 
     setIsSubmitting(true);
 
     try {
       const regId = generateRegistrationId();
-      const cleanMobile = formData.mobile.replace(/\D/g, '');
-      const cleanWhatsApp = formData.sameAsMobile
+      const rawMobile = formData.mobile.replace(/\D/g, '');
+      const cleanMobile = rawMobile.length === 12 && rawMobile.startsWith('91') ? rawMobile.slice(2) : rawMobile;
+      const rawWhatsApp = formData.sameAsMobile
         ? cleanMobile
         : formData.whatsapp.replace(/\D/g, '') || cleanMobile;
+      const cleanWhatsApp = rawWhatsApp.length === 12 && rawWhatsApp.startsWith('91') ? rawWhatsApp.slice(2) : rawWhatsApp;
 
-      const newRegistration: Registration = {
+      // Save to Cloud Firestore and await server confirmation BEFORE showing Registration ID
+      const savedRegistration = await FirestoreService.createRegistration({
         id: regId,
         fullName: formData.fullName.trim(),
         mobile: cleanMobile,
@@ -137,24 +142,7 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
         appointmentRequested: true,
         consentContact: formData.consentContact,
         consentMarketing: true,
-        leadStatus: 'New',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        googleSheetsSynced: false,
-        notes: [],
-        history: [
-          {
-            id: `h_${Date.now()}`,
-            fromStatus: 'New',
-            toStatus: 'New',
-            changedBy: 'Registration Form',
-            timestamp: new Date().toISOString(),
-            note: 'Lead submitted via direct form.',
-          },
-        ],
-      };
-
-      StorageService.saveRegistration(newRegistration);
+      });
 
       confetti({
         particleCount: 90,
@@ -163,7 +151,7 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
         colors: ['#D4AF37', '#F5DE9E', '#E6C665', '#ffffff'],
       });
 
-      setSubmittedRegistration(newRegistration);
+      setSubmittedRegistration(savedRegistration);
 
       setTimeout(() => {
         const el = document.getElementById('registration-section');
@@ -175,6 +163,11 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
       }, 100);
     } catch (err) {
       console.error('Registration submission error:', err);
+      setSubmitError(
+        language === 'mr'
+          ? 'नोंदणी सर्व्हरवर जतन करताना तांत्रिक अडचण आली. कृपया इंटरनेट तपासा आणि पुन्हा प्रयत्न करा.'
+          : 'Could not save your registration to the server. Please check your internet connection and try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -308,11 +301,12 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
           <form onSubmit={handleSubmit} noValidate className="space-y-5">
             {/* 1. Full Name */}
             <div>
-              <label className="block text-xs sm:text-sm font-semibold text-gray-200 mb-1.5 flex items-center gap-1.5">
+              <label htmlFor="reg-fullname" className="block text-xs sm:text-sm font-semibold text-gray-200 mb-1.5 flex items-center gap-1.5">
                 <User className="w-4 h-4 text-[#D4AF37]" />
                 <span>पूर्ण नाव (Full Name) *</span>
               </label>
               <input
+                id="reg-fullname"
                 type="text"
                 value={formData.fullName}
                 onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
@@ -332,12 +326,13 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Mobile */}
               <div>
-                <label className="block text-xs sm:text-sm font-semibold text-gray-200 mb-1.5">
+                <label htmlFor="reg-mobile" className="block text-xs sm:text-sm font-semibold text-gray-200 mb-1.5">
                   मोबाईल नंबर (Mobile Number) *
                 </label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-3 text-xs text-gray-400 font-bold">+91</span>
                   <input
+                    id="reg-mobile"
                     type="tel"
                     maxLength={10}
                     value={formData.mobile}
@@ -416,10 +411,11 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* District */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1">
+                  <label htmlFor="reg-district" className="block text-xs font-semibold text-gray-300 mb-1">
                     जिल्हा (District) *
                   </label>
                   <select
+                    id="reg-district"
                     value={formData.district}
                     onChange={(e) => handleDistrictChange(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#16161A] border border-[#D4AF37]/30 text-white text-xs sm:text-sm focus:outline-none focus:border-[#D4AF37]"
@@ -434,10 +430,11 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
 
                 {/* Taluka */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1">
+                  <label htmlFor="reg-taluka" className="block text-xs font-semibold text-gray-300 mb-1">
                     तालुका (Taluka) *
                   </label>
                   <select
+                    id="reg-taluka"
                     value={formData.taluka}
                     onChange={(e) => setFormData({ ...formData, taluka: e.target.value })}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#16161A] border border-[#D4AF37]/30 text-white text-xs sm:text-sm focus:outline-none focus:border-[#D4AF37]"
@@ -457,10 +454,11 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Village / City */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1">
+                  <label htmlFor="reg-village" className="block text-xs font-semibold text-gray-300 mb-1">
                     गाव किंवा शहर (Village / City) *
                   </label>
                   <input
+                    id="reg-village"
                     type="text"
                     value={formData.villageCity}
                     onChange={(e) => setFormData({ ...formData, villageCity: e.target.value })}
@@ -476,10 +474,11 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
 
                 {/* PIN Code */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1">
+                  <label htmlFor="reg-pincode" className="block text-xs font-semibold text-gray-300 mb-1">
                     पिन कोड (PIN Code) *
                   </label>
                   <input
+                    id="reg-pincode"
                     type="text"
                     maxLength={6}
                     value={formData.pincode}
@@ -641,15 +640,23 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
               )}
             </div>
 
+            {/* Server Error Banner */}
+            {submitError && (
+              <div role="alert" className="p-3.5 rounded-xl bg-red-950/60 border border-red-500/40 text-red-200 text-xs sm:text-sm flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span>{submitError}</span>
+              </div>
+            )}
+
             {/* Submit Button */}
             <div className="pt-2">
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full gold-gradient-btn py-3.5 rounded-xl text-sm sm:text-base font-black flex items-center justify-center gap-2 cursor-pointer shadow-xl transition-all"
+                className="w-full gold-gradient-btn py-3.5 rounded-xl text-sm sm:text-base font-black flex items-center justify-center gap-2 cursor-pointer shadow-xl transition-all disabled:opacity-60"
               >
                 {isSubmitting ? (
-                  <span>प्रक्रिया सुरू आहे...</span>
+                  <span>सर्व्हरवर नोंदणी जतन सुरू आहे...</span>
                 ) : (
                   <>
                     <Check className="w-5 h-5" />
