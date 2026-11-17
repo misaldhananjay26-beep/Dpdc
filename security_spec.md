@@ -10,7 +10,7 @@
    - No shadow/unexpected fields exist (`keys().hasOnly(...)`).
    - All string fields satisfy strict length bounds and regex formats (`mobile`, `phoneNumber`, `pincode`).
    - `notes` starts empty (`size() == 0`) and `history` is bounded (`size() <= 1`).
-3. **Admin RBAC & Spoof Protection**: Admin operations (`read`, `update`, `delete` on `/registrations`, writes on `/settings`, reads/writes on `/auditLogs` and `/admins`) are strictly restricted to authenticated admins verified via `admins/{uid}` OR verified primary admin email (`request.auth.token.email_verified == true && request.auth.token.email == 'misaldhananjay26@gmail.com'`).
+3. **Admin RBAC & Spoof Protection**: Admin operations (`read`, `update`, `delete` on `/registrations`, writes on `/settings`, reads/writes on `/auditLogs` and `/admins`) are strictly restricted to authenticated admins verified via `admins/{uid}`, the bootstrapped project owner UID (`ZAa9MBh8NmQRKHAeWFAGYfwM2rs2`), OR verified primary admin email (`request.auth.token.email_verified == true && request.auth.token.email == 'misaldhananjay26@gmail.com'`).
 4. **Immutability**: `id`, `registrationId`, and `timestamp` are immutable once created.
 
 ## 2. The "Dirty Dozen" Attack Payloads (Must All Return PERMISSION_DENIED)

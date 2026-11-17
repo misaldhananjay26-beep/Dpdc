@@ -27,6 +27,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Verified project owner UID (prevents email spoofing while allowing console-created admin login)
+    function isBootstrappedAdminUid() {
+      return isSignedIn()
+        && request.auth.uid == 'ZAa9MBh8NmQRKHAeWFAGYfwM2rs2';
+    }
+
     function isVerifiedAdminEmail() {
       return isSignedIn()
         && request.auth.token.email_verified == true
@@ -42,7 +48,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isVerifiedAdminEmail() || isRegisteredAdmin();
+      return isBootstrappedAdminUid() || isVerifiedAdminEmail() || isRegisteredAdmin();
     }
 
     function isValidLeadStatus(status) {

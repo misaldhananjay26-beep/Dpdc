@@ -78,6 +78,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isLoadingLeads, setIsLoadingLeads] = useState<boolean>(true);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [verificationSent, setVerificationSent] = useState<boolean>(false);
+  const [copiedUid, setCopiedUid] = useState<boolean>(false);
+  const [reconnectKey, setReconnectKey] = useState<number>(0);
   const [selectedApplicant, setSelectedApplicant] = useState<Registration | null>(null);
 
   // Filters & Search
@@ -147,7 +149,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       unsubSettings();
       unsubAdmins();
     };
-  }, [adminUser.uid]);
+  }, [adminUser.uid, reconnectKey]);
 
   // Google OAuth connect if token is missing
   const ensureGoogleToken = async (): Promise<string | null> => {
@@ -364,6 +366,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleCopyUid = async () => {
+    try {
+      await navigator.clipboard.writeText(adminUser.uid);
+      setCopiedUid(true);
+      setTimeout(() => setCopiedUid(false), 2000);
+    } catch {
+      // Fallback ignored
+    }
+  };
+
+  const handleReconnectFirestore = async () => {
+    try {
+      await adminUser.reload();
+      await adminUser.getIdToken(true);
+    } catch (e) {
+      console.error('Failed to refresh token:', e);
+    }
+    setReconnectKey((k) => k + 1);
+  };
+
   const handleAddAuthorizedAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAdminUid.trim() || !newAdminEmail.trim()) return;
@@ -560,16 +582,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div role="alert" className="mb-6 p-5 rounded-2xl bg-red-950/60 border border-red-500/40 text-red-100 space-y-3">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-              <div className="space-y-1 text-xs sm:text-sm">
+              <div className="space-y-2 text-xs sm:text-sm flex-1">
                 <p className="font-bold text-white">
-                  Firestore डेटा प्रवेश नाकारला (Admin Authorization Required)
+                  प्रशासक पडताळणी प्रलंबित (Admin Authorization Required)
                 </p>
                 <p className="text-red-200 leading-relaxed">
-                  तुमचे Firebase खाते (<span className="font-mono font-bold">{adminEmail}</span>, UID:{' '}
-                  <span className="font-mono select-all bg-black/40 px-1.5 py-0.5 rounded">{adminUser.uid}</span>) अद्याप अधिकृत प्रशासक म्हणून सत्यापित नाही.
+                  तुम्ही <span className="font-mono font-bold text-white">{adminEmail}</span> ने यशस्वीपणे लॉगिन केले आहे. सुरक्षिततेसाठी खालीलपैकी एक पायरी पूर्ण करा:
                 </p>
-                {!adminUser.emailVerified && (
-                  <div className="pt-2 flex flex-wrap items-center gap-3">
+                <ul className="list-disc list-inside text-xs text-red-100 space-y-1">
+                  <li>
+                    <strong>पर्याय १ (Real Email असल्यास):</strong> खालील बटणावर क्लिक करून ईमेल पडताळणी लिंक पाठवा, तुमच्या इनबॉक्समधील लिंकवर क्लिक करा आणि नंतर <strong>पुन्हा कनेक्ट करा</strong> दाबा.
+                  </li>
+                  <li>
+                    <strong>पर्याय २ (कोणत्याही ईमेलसाठी):</strong> Firebase Console → Firestore Database (<span className="font-mono text-[#F5DE9E]">ai-studio-fbafaae3-bad7-482b-9b11-1c34a3895982</span>) मध्ये <span className="font-mono">admins</span> कलेक्शन अंतर्गत Document ID म्हणून खालील UID जोडा (fields: <span className="font-mono">uid</span>, <span className="font-mono">email</span>, <span className="font-mono">role: &quot;admin&quot;</span>):
+                  </li>
+                </ul>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="font-mono text-xs select-all bg-black/50 border border-red-500/30 px-2.5 py-1.5 rounded-lg text-[#F5DE9E]">
+                    UID: {adminUser.uid}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyUid}
+                    className="px-3 py-1.5 rounded-lg bg-[#18181C] hover:bg-[#222228] border border-neutral-700 text-xs font-semibold text-gray-200 cursor-pointer"
+                  >
+                    {copiedUid ? 'UID कॉपी झाले!' : 'UID कॉपी करा'}
+                  </button>
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center gap-3">
+                  {!adminUser.emailVerified && (
                     <button
                       type="button"
                       onClick={handleSendVerificationEmail}
@@ -577,13 +620,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     >
                       ईमेल पडताळणी लिंक पाठवा (Send Verification Email)
                     </button>
-                    {verificationSent && (
-                      <span className="text-emerald-300 text-xs font-semibold">
-                        पडताळणी लिंक ईमेलवर पाठवली आहे! लिंकवर क्लिक केल्यानंतर पृष्ठ रिफ्रेश करा.
-                      </span>
-                    )}
-                  </div>
-                )}
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleReconnectFirestore}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>पुन्हा कनेक्ट करा (Reconnect)</span>
+                  </button>
+                  {verificationSent && (
+                    <span className="text-emerald-300 text-xs font-semibold">
+                      पडताळणी लिंक ईमेलवर पाठवली आहे!
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
