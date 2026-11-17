@@ -48,6 +48,9 @@ export interface Registration {
   state: string;
   pincode: string;
   completeAddress?: string;
+  caste?: string;
+  instagramFollowed?: boolean;
+  instagramClickedAt?: string;
   courseStatus: CourseStatus;
   qualification?: string;
   businessInterest: BusinessInterest;

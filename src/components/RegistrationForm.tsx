@@ -11,6 +11,11 @@ import {
   Printer,
   RotateCcw,
   Check,
+  CheckCircle2,
+  ExternalLink,
+  Instagram,
+  Lock,
+  Users,
 } from 'lucide-react';
 import {
   Language,
@@ -30,6 +35,9 @@ import {
 import { FirestoreService } from '../services/firestoreService';
 import { SuccessAnimation } from './SuccessAnimation';
 
+const INSTAGRAM_OFFICIAL_URL =
+  'https://www.instagram.com/dpdc_skill_pvt_ltd?vrfl=ZWJ5ODV2Y2o1NzVy';
+
 interface RegistrationFormProps {
   language: Language;
   onOpenPrivacy: () => void;
@@ -46,12 +54,12 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submittedRegistration, setSubmittedRegistration] = useState<Registration | null>(null);
 
-  // Clean, focused form state without email or extraneous text boxes
   const [formData, setFormData] = useState({
     fullName: '',
     mobile: '',
     sameAsMobile: true,
     whatsapp: '',
+    caste: '',
     villageCity: '',
     district: 'Pune',
     taluka: 'Baramati',
@@ -61,6 +69,8 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
     businessInterest: 'centre' as BusinessInterest,
     premisesAvailable: 'yes' as PremisesStatus,
     consentContact: false,
+    instagramFollowed: false,
+    instagramClickedAt: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -74,35 +84,85 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
     }));
   };
 
+  const handleInstagramFollowClick = () => {
+    const clickedIso = new Date().toISOString();
+    setFormData((prev) => ({
+      ...prev,
+      instagramFollowed: true,
+      instagramClickedAt: prev.instagramClickedAt || clickedIso,
+    }));
+    setErrors((prev) => {
+      if (!prev.instagramFollowed) return prev;
+      const next = { ...prev };
+      delete next.instagramFollowed;
+      return next;
+    });
+  };
+
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
 
     if (!formData.fullName.trim() || formData.fullName.trim().length < 3) {
-      errs.fullName = language === 'mr' ? 'कृपया आपले पूर्ण नाव प्रविष्ट करा.' : 'Please enter your full name.';
+      errs.fullName =
+        language === 'mr'
+          ? 'कृपया आपले पूर्ण नाव प्रविष्ट करा.'
+          : 'Please enter your full name.';
     }
 
     if (!isValidIndianMobile(formData.mobile)) {
-      errs.mobile = language === 'mr' ? 'कृपया वैध १० अंकी मोबाईल नंबर प्रविष्ट करा.' : 'Please enter a valid 10-digit mobile number.';
+      errs.mobile =
+        language === 'mr'
+          ? 'कृपया वैध १० अंकी मोबाईल नंबर प्रविष्ट करा.'
+          : 'Please enter a valid 10-digit mobile number.';
     }
 
     if (!formData.sameAsMobile && formData.whatsapp && !isValidIndianMobile(formData.whatsapp)) {
-      errs.whatsapp = language === 'mr' ? 'कृपया वैध १० अंकी व्हॉट्सअ‍ॅप नंबर प्रविष्ट करा.' : 'Please enter a valid WhatsApp number.';
+      errs.whatsapp =
+        language === 'mr'
+          ? 'कृपया वैध १० अंकी व्हॉट्सअ‍ॅप नंबर प्रविष्ट करा.'
+          : 'Please enter a valid WhatsApp number.';
+    }
+
+    if (!formData.caste.trim() || formData.caste.trim().length < 2) {
+      errs.caste =
+        language === 'mr'
+          ? 'कृपया आपली जात / प्रवर्ग प्रविष्ट करा.'
+          : 'Please enter your caste / category.';
     }
 
     if (!formData.villageCity.trim()) {
-      errs.villageCity = language === 'mr' ? 'गाव किंवा शहराचे नाव आवश्यक आहे.' : 'Village or city is required.';
+      errs.villageCity =
+        language === 'mr'
+          ? 'गाव किंवा शहराचे नाव आवश्यक आहे.'
+          : 'Village or city is required.';
     }
 
     if (!formData.taluka.trim()) {
-      errs.taluka = language === 'mr' ? 'तालुका निवडणे आवश्यक आहे.' : 'Taluka is required.';
+      errs.taluka =
+        language === 'mr'
+          ? 'तालुका निवडणे आवश्यक आहे.'
+          : 'Taluka is required.';
     }
 
     if (!isValidPincode(formData.pincode)) {
-      errs.pincode = language === 'mr' ? 'कृपया वैध ६ अंकी पिन कोड प्रविष्ट करा.' : 'Please enter a valid 6-digit PIN code.';
+      errs.pincode =
+        language === 'mr'
+          ? 'कृपया वैध ६ अंकी पिन कोड प्रविष्ट करा.'
+          : 'Please enter a valid 6-digit PIN code.';
     }
 
     if (!formData.consentContact) {
-      errs.consentContact = language === 'mr' ? 'नोंदणीसाठी कृपया संमती चेकबॉक्स निवडा.' : 'Please agree to the consent checkbox to register.';
+      errs.consentContact =
+        language === 'mr'
+          ? 'नोंदणीसाठी कृपया संमती चेकबॉक्स निवडा.'
+          : 'Please agree to the consent checkbox to register.';
+    }
+
+    if (!formData.instagramFollowed) {
+      errs.instagramFollowed =
+        language === 'mr'
+          ? 'नोंदणी पूर्ण करण्यासाठी कृपया प्रथम Instagram वर Follow करा.'
+          : 'Please follow our official Instagram page first to unlock submission.';
     }
 
     setErrors(errs);
@@ -119,11 +179,17 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
     try {
       const regId = generateRegistrationId();
       const rawMobile = formData.mobile.replace(/\D/g, '');
-      const cleanMobile = rawMobile.length === 12 && rawMobile.startsWith('91') ? rawMobile.slice(2) : rawMobile;
+      const cleanMobile =
+        rawMobile.length === 12 && rawMobile.startsWith('91')
+          ? rawMobile.slice(2)
+          : rawMobile;
       const rawWhatsApp = formData.sameAsMobile
         ? cleanMobile
         : formData.whatsapp.replace(/\D/g, '') || cleanMobile;
-      const cleanWhatsApp = rawWhatsApp.length === 12 && rawWhatsApp.startsWith('91') ? rawWhatsApp.slice(2) : rawWhatsApp;
+      const cleanWhatsApp =
+        rawWhatsApp.length === 12 && rawWhatsApp.startsWith('91')
+          ? rawWhatsApp.slice(2)
+          : rawWhatsApp;
 
       // Save to Cloud Firestore and await server confirmation BEFORE showing Registration ID
       const savedRegistration = await FirestoreService.createRegistration({
@@ -131,6 +197,9 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
         fullName: formData.fullName.trim(),
         mobile: cleanMobile,
         whatsapp: cleanWhatsApp,
+        caste: formData.caste.trim(),
+        instagramFollowed: formData.instagramFollowed,
+        instagramClickedAt: formData.instagramClickedAt || new Date().toISOString(),
         villageCity: formData.villageCity.trim(),
         taluka: formData.taluka.trim(),
         district: formData.district,
@@ -180,6 +249,7 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
       mobile: '',
       sameAsMobile: true,
       whatsapp: '',
+      caste: '',
       villageCity: '',
       district: 'Pune',
       taluka: 'Baramati',
@@ -189,6 +259,8 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
       businessInterest: 'centre',
       premisesAvailable: 'yes',
       consentContact: false,
+      instagramFollowed: false,
+      instagramClickedAt: '',
     });
     setErrors({});
   };
@@ -223,21 +295,27 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
             </div>
 
             <div className="space-y-2 text-xs sm:text-sm">
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-3">
                 <span className="text-gray-400">नाव:</span>
                 <span className="font-bold text-white text-right">{submittedRegistration.fullName}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-3">
                 <span className="text-gray-400">मोबाईल:</span>
                 <span className="font-medium text-gray-200">{submittedRegistration.mobile}</span>
               </div>
-              <div className="flex justify-between">
+              {submittedRegistration.caste && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-400">जात / प्रवर्ग:</span>
+                  <span className="font-medium text-gray-200 text-right">{submittedRegistration.caste}</span>
+                </div>
+              )}
+              <div className="flex justify-between gap-3">
                 <span className="text-gray-400">गाव / तालुका:</span>
                 <span className="font-medium text-gray-200 text-right">
                   {submittedRegistration.villageCity}, {submittedRegistration.taluka} ({submittedRegistration.district})
                 </span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-3">
                 <span className="text-gray-400">आवड:</span>
                 <span className="font-bold text-[#F5DE9E] text-right">
                   {submittedRegistration.businessInterest === 'centre'
@@ -358,7 +436,7 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
               {/* WhatsApp */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs sm:text-sm font-semibold text-gray-200">
+                  <label htmlFor="reg-whatsapp" className="text-xs sm:text-sm font-semibold text-gray-200">
                     व्हॉट्सअ‍ॅप नंबर (WhatsApp)
                   </label>
                   <label className="inline-flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
@@ -377,6 +455,7 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
                 <div className="relative">
                   <span className="absolute left-3.5 top-3 text-xs text-gray-400 font-bold">+91</span>
                   <input
+                    id="reg-whatsapp"
                     type="tel"
                     maxLength={10}
                     disabled={formData.sameAsMobile}
@@ -401,7 +480,42 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
               </div>
             </div>
 
-            {/* 3. District, Taluka & Village */}
+            {/* 3. Caste / Category */}
+            <div>
+              <label htmlFor="reg-caste" className="block text-xs sm:text-sm font-semibold text-gray-200 mb-1.5 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-[#D4AF37]" />
+                <span>जात / प्रवर्ग (Caste / Category) *</span>
+              </label>
+              <input
+                id="reg-caste"
+                type="text"
+                list="dpdc-caste-suggestions"
+                maxLength={80}
+                value={formData.caste}
+                onChange={(e) => setFormData({ ...formData, caste: e.target.value })}
+                placeholder="उदा. मराठा, ओबीसी (OBC), ओपन (Open), एससी (SC), एसटी (ST)"
+                className={`w-full px-4 py-3 rounded-xl bg-[#131316] border ${
+                  errors.caste ? 'border-red-500' : 'border-[#D4AF37]/30'
+                } text-white placeholder-gray-500 focus:outline-none focus:border-[#D4AF37] text-sm`}
+              />
+              <datalist id="dpdc-caste-suggestions">
+                <option value="Open / General" />
+                <option value="Maratha" />
+                <option value="OBC" />
+                <option value="SC" />
+                <option value="ST" />
+                <option value="NT / VJNT" />
+                <option value="SBC" />
+                <option value="SEBC" />
+              </datalist>
+              {errors.caste && (
+                <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" /> {errors.caste}
+                </p>
+              )}
+            </div>
+
+            {/* 4. District, Taluka & Village */}
             <div className="p-4 rounded-2xl bg-[#121215] border border-neutral-800 space-y-3">
               <div className="flex items-center gap-1.5 text-xs font-bold text-[#F5DE9E]">
                 <MapPin className="w-4 h-4 text-[#D4AF37]" />
@@ -439,9 +553,9 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
                     onChange={(e) => setFormData({ ...formData, taluka: e.target.value })}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#16161A] border border-[#D4AF37]/30 text-white text-xs sm:text-sm focus:outline-none focus:border-[#D4AF37]"
                   >
-                    {availableTalukas.map((t) => (
-                      <option key={t} value={t} className="bg-[#141416] text-white">
-                        {t}
+                    {availableTalukas.map((tal) => (
+                      <option key={tal} value={tal} className="bg-[#141416] text-white">
+                        {tal}
                       </option>
                     ))}
                   </select>
@@ -500,7 +614,7 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
               </div>
             </div>
 
-            {/* 4. Course Status Radio Options */}
+            {/* 5. Course Status Radio Options */}
             <div>
               <label className="block text-xs sm:text-sm font-semibold text-gray-200 mb-2 flex items-center gap-1.5">
                 <GraduationCap className="w-4 h-4 text-[#D4AF37]" />
@@ -537,7 +651,7 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
               </div>
             </div>
 
-            {/* 5. Business Interest Options */}
+            {/* 6. Business Interest Options */}
             <div>
               <label className="block text-xs sm:text-sm font-semibold text-gray-200 mb-2 flex items-center gap-1.5">
                 <Store className="w-4 h-4 text-[#D4AF37]" />
@@ -573,7 +687,7 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
               </div>
             </div>
 
-            {/* 6. Premises Status */}
+            {/* 7. Premises Status */}
             <div>
               <label className="block text-xs sm:text-sm font-semibold text-gray-200 mb-2">
                 सेंटरसाठी जागा उपलब्ध आहे का? *
@@ -611,8 +725,8 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
               </div>
             </div>
 
-            {/* 7. DPDP Consent Checkbox */}
-            <div className="pt-2">
+            {/* 8. DPDP Consent Checkbox */}
+            <div className="pt-1">
               <label className="flex items-start gap-2.5 p-3 rounded-xl bg-[#121215] border border-neutral-800 cursor-pointer">
                 <input
                   type="checkbox"
@@ -640,6 +754,62 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
               )}
             </div>
 
+            {/* 9. Mandatory Instagram Follow Gate ("Follow First to Submit") */}
+            <div
+              className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+                formData.instagramFollowed
+                  ? 'bg-emerald-950/30 border-emerald-500/45'
+                  : 'bg-gradient-to-br from-[#191318] via-[#141216] to-[#171310] border-[#D4AF37]/45'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-white">
+                    <Instagram className="w-4 h-4 text-pink-400 shrink-0" />
+                    <span>
+                      अधिकृत Instagram पेज फॉलो करा (Follow First to Submit) *
+                    </span>
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-gray-300 leading-relaxed">
+                    {formData.instagramFollowed
+                      ? 'Instagram फॉलो पायरी पूर्ण झाली आहे! आता तुम्ही खालील नोंदणी सबमिट बटणावर क्लिक करू शकता.'
+                      : 'सबमिट बटण अनलॉक करण्यासाठी व बॅच/प्रशिक्षण अपडेट्स मिळवण्यासाठी प्रथम आमच्या अधिकृत Instagram पेजवर जाऊन Follow करा.'}
+                  </p>
+                </div>
+
+                <a
+                  href={INSTAGRAM_OFFICIAL_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={handleInstagramFollowClick}
+                  className={`shrink-0 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg ${
+                    formData.instagramFollowed
+                      ? 'bg-emerald-600/25 border border-emerald-400/50 text-emerald-200 hover:bg-emerald-600/35'
+                      : 'bg-gradient-to-r from-[#833AB4] via-[#FD1D1D] to-[#F77737] text-white hover:brightness-110'
+                  }`}
+                >
+                  {formData.instagramFollowed ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                      <span>Instagram Followed</span>
+                    </>
+                  ) : (
+                    <>
+                      <Instagram className="w-4 h-4" />
+                      <span>Follow @dpdc_skill_pvt_ltd</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </>
+                  )}
+                </a>
+              </div>
+
+              {errors.instagramFollowed && (
+                <p className="mt-2 text-xs text-red-400 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" /> {errors.instagramFollowed}
+                </p>
+              )}
+            </div>
+
             {/* Server Error Banner */}
             {submitError && (
               <div role="alert" className="p-3.5 rounded-xl bg-red-950/60 border border-red-500/40 text-red-200 text-xs sm:text-sm flex items-start gap-2">
@@ -648,15 +818,24 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
               </div>
             )}
 
-            {/* Submit Button */}
-            <div className="pt-2">
+            {/* Submit Button (Unlocked only after clicking Instagram Follow) */}
+            <div className="pt-2 space-y-2">
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="w-full gold-gradient-btn py-3.5 rounded-xl text-sm sm:text-base font-black flex items-center justify-center gap-2 cursor-pointer shadow-xl transition-all disabled:opacity-60"
+                disabled={isSubmitting || !formData.instagramFollowed}
+                className={`w-full py-3.5 rounded-xl text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-xl transition-all ${
+                  !formData.instagramFollowed
+                    ? 'bg-neutral-800 border border-neutral-700 text-gray-400 cursor-not-allowed'
+                    : 'gold-gradient-btn cursor-pointer disabled:opacity-60'
+                }`}
               >
                 {isSubmitting ? (
                   <span>सर्व्हरवर नोंदणी जतन सुरू आहे...</span>
+                ) : !formData.instagramFollowed ? (
+                  <>
+                    <Lock className="w-4 h-4" />
+                    <span>सबमिट करण्यासाठी आधी Instagram वर Follow करा</span>
+                  </>
                 ) : (
                   <>
                     <Check className="w-5 h-5" />

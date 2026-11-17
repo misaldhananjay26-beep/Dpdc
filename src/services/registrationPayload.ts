@@ -2,7 +2,7 @@ import { Registration } from '../types';
 import { sanitizeText } from '../utils/validation';
 
 /**
- * Pure helper functions for preparing, sanitizing, mapping, and filtering registration records.
+ * Pure helper functions for preparing, sanitizing, mapping, sorting, and filtering registration records.
  * Volumetric limits strictly match firebase-blueprint.json & firestore.rules.
  */
 
@@ -18,6 +18,9 @@ export interface RegistrationPayloadInput {
   state: string;
   pincode: string;
   completeAddress?: string;
+  caste?: string;
+  instagramFollowed?: boolean;
+  instagramClickedAt?: string;
   courseStatus: Registration['courseStatus'];
   qualification?: string;
   businessInterest: Registration['businessInterest'];
@@ -76,6 +79,16 @@ export function buildFirestoreRegistrationPayload(
     ],
   };
 
+  const cleanCaste = sanitizeText(input.caste, 80);
+  if (cleanCaste) payload.caste = cleanCaste;
+
+  if (input.instagramFollowed !== undefined) {
+    payload.instagramFollowed = Boolean(input.instagramFollowed);
+  }
+
+  const cleanInstaAt = sanitizeText(input.instagramClickedAt, 40);
+  if (cleanInstaAt) payload.instagramClickedAt = cleanInstaAt;
+
   const cleanEmail = sanitizeText(input.email, 120);
   if (cleanEmail) payload.email = cleanEmail;
 
@@ -99,14 +112,38 @@ export function buildFirestoreRegistrationPayload(
   return payload;
 }
 
+export function extractTimestampMillis(rawTimestamp: unknown, fallbackIso?: string): number {
+  if (rawTimestamp && typeof rawTimestamp === 'object') {
+    if ('toMillis' in rawTimestamp && typeof (rawTimestamp as { toMillis: () => number }).toMillis === 'function') {
+      const ms = (rawTimestamp as { toMillis: () => number }).toMillis();
+      if (Number.isFinite(ms)) return ms;
+    }
+    if ('toDate' in rawTimestamp && typeof (rawTimestamp as { toDate: () => Date }).toDate === 'function') {
+      const ms = (rawTimestamp as { toDate: () => Date }).toDate().getTime();
+      if (Number.isFinite(ms)) return ms;
+    }
+    if ('seconds' in rawTimestamp && typeof (rawTimestamp as { seconds: unknown }).seconds === 'number') {
+      return (rawTimestamp as { seconds: number }).seconds * 1000;
+    }
+  }
+  if (typeof rawTimestamp === 'number' && Number.isFinite(rawTimestamp)) {
+    return rawTimestamp;
+  }
+  if (typeof rawTimestamp === 'string' && rawTimestamp.trim()) {
+    const parsed = Date.parse(rawTimestamp);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  if (typeof fallbackIso === 'string' && fallbackIso.trim()) {
+    const parsed = Date.parse(fallbackIso);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
 export function extractIsoTimestamp(rawTimestamp: unknown, fallbackIso?: string): string {
-  if (
-    rawTimestamp &&
-    typeof rawTimestamp === 'object' &&
-    'toDate' in rawTimestamp &&
-    typeof (rawTimestamp as { toDate: () => Date }).toDate === 'function'
-  ) {
-    return (rawTimestamp as { toDate: () => Date }).toDate().toISOString();
+  const millis = extractTimestampMillis(rawTimestamp, fallbackIso);
+  if (millis > 0) {
+    return new Date(millis).toISOString();
   }
   if (typeof rawTimestamp === 'string' && rawTimestamp.trim()) {
     return rawTimestamp;
@@ -120,7 +157,10 @@ export function extractIsoTimestamp(rawTimestamp: unknown, fallbackIso?: string)
 export function mapDocToRegistration(docId: string, data: Record<string, unknown>): Registration {
   const id = String(data.registrationId || data.id || docId);
   const mobile = String(data.phoneNumber || data.mobile || '');
-  const createdAt = extractIsoTimestamp(data.timestamp, typeof data.createdAt === 'string' ? data.createdAt : undefined);
+  const createdAt = extractIsoTimestamp(
+    data.timestamp,
+    typeof data.createdAt === 'string' ? data.createdAt : typeof data.updatedAt === 'string' ? data.updatedAt : undefined
+  );
 
   return {
     id,
@@ -136,6 +176,13 @@ export function mapDocToRegistration(docId: string, data: Record<string, unknown
     state: String(data.state || 'Maharashtra'),
     pincode: String(data.pincode || ''),
     completeAddress: typeof data.completeAddress === 'string' ? data.completeAddress : undefined,
+    caste: typeof data.caste === 'string' && data.caste.trim() ? data.caste.trim() : undefined,
+    instagramFollowed:
+      typeof data.instagramFollowed === 'boolean' ? data.instagramFollowed : undefined,
+    instagramClickedAt:
+      typeof data.instagramClickedAt === 'string' && data.instagramClickedAt.trim()
+        ? data.instagramClickedAt
+        : undefined,
     courseStatus: (data.courseStatus as Registration['courseStatus']) || 'completed',
     qualification: typeof data.qualification === 'string' ? data.qualification : undefined,
     businessInterest: (data.businessInterest as Registration['businessInterest']) || 'centre',
@@ -154,7 +201,7 @@ export function mapDocToRegistration(docId: string, data: Record<string, unknown
     consentContact: Boolean(data.consentContact ?? true),
     consentMarketing: Boolean(data.consentMarketing ?? true),
     leadStatus: (data.leadStatus as Registration['leadStatus']) || 'New',
-    timestamp: data.timestamp,
+    timestamp: data.timestamp ?? data.createdAt,
     createdAt,
     updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : createdAt,
     googleSheetsSynced: Boolean(data.googleSheetsSynced),
@@ -166,6 +213,18 @@ export function mapDocToRegistration(docId: string, data: Record<string, unknown
     notes: Array.isArray(data.notes) ? data.notes : [],
     history: Array.isArray(data.history) ? data.history : [],
   };
+}
+
+/**
+ * Sorts registrations newest-first in memory so Firestore queries never silently drop
+ * older documents that might lack a `timestamp` field.
+ */
+export function sortRegistrationsNewestFirst(list: Registration[]): Registration[] {
+  return [...list].sort((a, b) => {
+    const aMs = extractTimestampMillis(a.timestamp, a.createdAt || a.updatedAt);
+    const bMs = extractTimestampMillis(b.timestamp, b.createdAt || b.updatedAt);
+    return bMs - aMs;
+  });
 }
 
 export function filterRegistrations(
@@ -183,13 +242,14 @@ export function filterRegistrations(
   return registrations.filter((r) => {
     const matchesSearch =
       !searchLower ||
-      r.fullName.toLowerCase().includes(searchLower) ||
-      r.mobile.includes(searchLower) ||
-      (r.phoneNumber && r.phoneNumber.includes(searchLower)) ||
-      r.villageCity.toLowerCase().includes(searchLower) ||
-      r.taluka.toLowerCase().includes(searchLower) ||
-      r.id.toLowerCase().includes(searchLower) ||
-      (r.registrationId && r.registrationId.toLowerCase().includes(searchLower));
+      (r.fullName || '').toLowerCase().includes(searchLower) ||
+      (r.mobile || '').includes(searchLower) ||
+      (r.phoneNumber || '').includes(searchLower) ||
+      (r.caste || '').toLowerCase().includes(searchLower) ||
+      (r.villageCity || '').toLowerCase().includes(searchLower) ||
+      (r.taluka || '').toLowerCase().includes(searchLower) ||
+      (r.id || '').toLowerCase().includes(searchLower) ||
+      (r.registrationId || '').toLowerCase().includes(searchLower);
 
     const matchesDistrict = filters.district === 'ALL' || r.district === filters.district;
     const matchesStatus = filters.leadStatus === 'ALL' || r.leadStatus === filters.leadStatus;

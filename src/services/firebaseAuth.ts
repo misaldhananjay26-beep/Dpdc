@@ -18,7 +18,10 @@ export const SCOPES = [
 const provider = new GoogleAuthProvider();
 SCOPES.forEach((scope) => provider.addScope(scope));
 
-const AUTHORIZED_ADMIN_EMAILS = ['misaldhananjay26@gmail.com'];
+const AUTHORIZED_ADMIN_EMAILS = [
+  'misaldhananjay26@gmail.com',
+  'misalv4444@gmail.com',
+];
 
 export function isAuthorizedAdminEmail(email?: string | null): boolean {
   if (!email) return false;

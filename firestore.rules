@@ -27,10 +27,13 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Verified project owner UID (prevents email spoofing while allowing console-created admin login)
+    // Verified project admin UIDs (prevents email spoofing while allowing console-created admin login)
     function isBootstrappedAdminUid() {
       return isSignedIn()
-        && request.auth.uid == 'ZAa9MBh8NmQRKHAeWFAGYfwM2rs2';
+        && request.auth.uid in [
+          'ZAa9MBh8NmQRKHAeWFAGYfwM2rs2',
+          'z0rw9vxWZ6P2l9ksrJ3tMMto4TU2'
+        ];
     }
 
     function isVerifiedAdminEmail() {
@@ -38,6 +41,7 @@ service cloud.firestore {
         && request.auth.token.email_verified == true
         && (
           request.auth.token.email == 'misaldhananjay26@gmail.com'
+          || request.auth.token.email == 'misalv4444@gmail.com'
           || request.auth.token.email.matches('.*@dpdcskill\\.com$')
         );
     }
@@ -104,6 +108,9 @@ service cloud.firestore {
         'state',
         'pincode',
         'completeAddress',
+        'caste',
+        'instagramFollowed',
+        'instagramClickedAt',
         'courseStatus',
         'qualification',
         'businessInterest',
@@ -143,6 +150,9 @@ service cloud.firestore {
       && data.state is string && data.state.size() >= 1 && data.state.size() <= 60
       && data.pincode is string && data.pincode.size() == 6 && data.pincode.matches('^[1-9][0-9]{5}$')
       && (!('completeAddress' in data) || (data.completeAddress is string && data.completeAddress.size() <= 300))
+      && (!('caste' in data) || (data.caste is string && data.caste.size() <= 80))
+      && (!('instagramFollowed' in data) || data.instagramFollowed is bool)
+      && (!('instagramClickedAt' in data) || (data.instagramClickedAt is string && data.instagramClickedAt.size() <= 40))
       && data.courseStatus in ['completed', 'learning', 'not_completed', 'interested']
       && (!('qualification' in data) || (data.qualification is string && data.qualification.size() <= 100))
       && data.businessInterest in ['centre', 'student', 'both', 'exploring']
@@ -208,6 +218,7 @@ service cloud.firestore {
         && isValidRegistrationSchema(incoming(), registrationId)
         && incoming().leadStatus == 'New'
         && incoming().consentContact == true
+        && incoming().instagramFollowed == true
         && incoming().timestamp == request.time
         && incoming().notes.size() == 0
         && incoming().history.size() <= 1;

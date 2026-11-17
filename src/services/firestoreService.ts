@@ -22,6 +22,7 @@ import {
 import {
   buildFirestoreRegistrationPayload,
   mapDocToRegistration,
+  sortRegistrationsNewestFirst,
   RegistrationPayloadInput,
 } from './registrationPayload';
 import { sanitizeText } from '../utils/validation';
@@ -73,25 +74,22 @@ export const FirestoreService = {
   },
 
   /**
-   * Real-time Firestore listener for all registrations sorted newest first.
-   * Requires authenticated admin user.
+   * Real-time Firestore listener for 100% of registrations (no orderBy filter that could drop
+   * older records lacking a `timestamp` field), sorted newest-first in memory.
    */
   subscribeToRegistrations(
     onData: (registrations: Registration[]) => void,
     onError: (err: Error) => void
   ): Unsubscribe {
-    const q = query(
-      collection(db, REGISTRATIONS_COLLECTION),
-      orderBy('timestamp', 'desc')
-    );
+    const colRef = collection(db, REGISTRATIONS_COLLECTION);
 
     return onSnapshot(
-      q,
+      colRef,
       (snapshot) => {
         const list = snapshot.docs.map((docSnap) =>
           mapDocToRegistration(docSnap.id, docSnap.data() as Record<string, unknown>)
         );
-        onData(list);
+        onData(sortRegistrationsNewestFirst(list));
       },
       (error) => {
         try {

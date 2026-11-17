@@ -86,6 +86,21 @@
           "description": "Optional street or shop address",
           "maxLength": 300
         },
+        "caste": {
+          "type": "string",
+          "description": "Applicant caste or social category",
+          "maxLength": 80
+        },
+        "instagramFollowed": {
+          "type": "boolean",
+          "description": "Whether applicant clicked and confirmed the official Instagram follow step"
+        },
+        "instagramClickedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when applicant opened the official Instagram link",
+          "maxLength": 40
+        },
         "courseStatus": {
           "type": "string",
           "enum": ["completed", "learning", "not_completed", "interested"],
